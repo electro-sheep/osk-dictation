@@ -3,6 +3,7 @@ import argparse
 import logging
 import signal
 import sys
+import threading
 import time
 
 import gi
@@ -13,7 +14,10 @@ from gi.repository import Gio, GLib  # noqa: E402
 from . import BUS_NAME, INTERFACE, OBJECT_PATH, __version__  # noqa: E402
 from .audio import MicCapture, file_capture_for  # noqa: E402
 from .config import ENGINES, Settings, ensure_user_files  # noqa: E402
+from .config import config_dir  # noqa: E402
 from .dictation import Dictation  # noqa: E402
+from .textfmt import format_phrase  # noqa: E402
+from .wordlists import load_words  # noqa: E402
 
 log = logging.getLogger("osk_dictation")
 
@@ -28,6 +32,15 @@ INTROSPECTION = f"""
     <method name="Stop"/>
     <method name="Cancel"/>
     <method name="Retry"/>
+    <method name="GlideLayout">
+      <arg name="keys" type="a{{s(dd)}}" direction="in"/>
+      <arg name="radius" type="d" direction="in"/>
+    </method>
+    <method name="Glide">
+      <arg name="points" type="a(dd)" direction="in"/>
+      <arg name="before" type="s" direction="in"/>
+      <arg name="words" type="as" direction="out"/>
+    </method>
     <signal name="State"><arg name="state" type="s"/></signal>
     <signal name="Partial"><arg name="text" type="s"/></signal>
     <signal name="Final"><arg name="text" type="s"/><arg name="replace" type="b"/></signal>
@@ -44,11 +57,57 @@ SIGNALS = {"state": ("State", "(s)"), "partial": ("Partial", "(s)"),
            "final": ("Final", "(sb)"), "level": ("Level", "(d)")}
 
 
+class GlideTyping:
+    """Swipe typing for the keyboard: a word list plus ideal paths per key layout."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._lexicon = None
+        self._layouts = {}
+        self._current = None
+
+    def set_layout(self, keys, radius):
+        signature = (tuple(sorted((c, round(x), round(y)) for c, (x, y) in keys.items())), round(radius))
+        self._current = signature
+        threading.Thread(target=self._layout, args=(signature, keys, radius), daemon=True).start()
+
+    def _layout(self, signature, keys=None, radius=None):
+        from .glide import Layout, load_lexicon
+
+        with self._lock:
+            if signature not in self._layouts:
+                if self._lexicon is None:
+                    self._lexicon = load_lexicon(load_words(config_dir() / "words.txt"))
+                    log.info("swipe typing: %d words", len(self._lexicon[0]))
+                if keys is None:
+                    raise RuntimeError("no keyboard layout sent yet")
+                self._layouts = {k: v for k, v in self._layouts.items() if k == self._current}  # keep two
+                self._layouts[signature] = Layout(keys, radius, *self._lexicon)
+            return self._layouts[signature]
+
+    def answer(self, invocation, points, before):
+        def work():
+            try:
+                if self._current is None:
+                    raise RuntimeError("no keyboard layout sent yet")
+                layout = self._layout(self._current)
+                words = layout.candidates(points)
+                keep = set(load_words(config_dir() / "words.txt")) | {w for w in words if w[:1].isupper()}
+                result = [format_phrase(w, before, keep) for w in words]
+                GLib.idle_add(lambda: invocation.return_value(GLib.Variant("(as)", (result,))) and False)
+            except Exception as e:
+                log.exception("glide failed")
+                GLib.idle_add(lambda: invocation.return_dbus_error(f"{INTERFACE}.Error", str(e)) and False)
+
+        threading.Thread(target=work, daemon=True).start()
+
+
 class Service:
     def __init__(self, settings, bus_name=BUS_NAME, capture_factory=MicCapture):
         self.loop = GLib.MainLoop()
         self.exit_code = 0
         self.dictation = Dictation(settings, self._emit_from_thread, capture_factory)
+        self.glide = GlideTyping()
         self._conn = None
         self._owns_name = False
         Gio.bus_own_name(Gio.BusType.SESSION, bus_name, Gio.BusNameOwnerFlags.DO_NOT_QUEUE,
@@ -96,6 +155,12 @@ class Service:
                 self.dictation.cancel()
             elif method == "Retry":
                 self.dictation.retry()
+            elif method == "GlideLayout":
+                self.glide.set_layout(*params.unpack())
+            elif method == "Glide":
+                self.dictation.last_used = time.monotonic()
+                self.glide.answer(invocation, *params.unpack())
+                return
             invocation.return_value(None)
         except Exception as e:
             log.info("%s refused: %s", method, e)

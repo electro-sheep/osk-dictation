@@ -30,10 +30,14 @@ def text_box(path, start_text="", preedit_log=None):
 
     def save(buf):
         path.write_text(buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False))
+        if preedit_log:
+            (OUT / "cursor.txt").write_text(str(buf.props.cursor_position))
 
     buffer.connect("changed", save)
     save(buffer)
     if preedit_log:
+        buffer.connect("notify::cursor-position",
+                       lambda buf, _p: (OUT / "cursor.txt").write_text(str(buf.props.cursor_position)))
         view.connect("preedit-changed", lambda _v, text: preedit_log.open("a").write(text + "\n"))
     return view
 
