@@ -1,9 +1,8 @@
 # OSK Dictation: design
 
-Status: phases 1 and 2 (service, terminal client, keyboard extension) built
-2026-10-15; see "Phase 1 as built" and "Phase 2 as built" at the end for
-where they differ from this plan. Written
-for the Surface Go 2 (Ubuntu 24.04, GNOME 46, Wayland, Core m3-8100Y, 8 GB).
+Status: phases 1 to 3 (service, terminal client, keyboard extension with live
+text and level meter) built 2026-10-15; see the "as built" sections at the
+end for where they differ from this plan. Written for the Surface Go 2 (Ubuntu 24.04, GNOME 46, Wayland, Core m3-8100Y, 8 GB).
 
 ## Goal
 
@@ -268,3 +267,43 @@ settings and extensions are separate from the real session. A test-driver
 extension clicks the key with a Clutter virtual pointer. In the first passing
 run, the key went red 0.16 s after the click, and the text was typed 1.2 s
 after the second click.
+
+## Phase 3 as built
+
+- **Live text.** `Partial` goes to
+  `Main.inputMethod.set_preedit_text(text, len, len, Clutter.PreeditResetMode.CLEAR)`.
+  CLEAR rather than COMMIT, because a COMMIT preedit gets typed by the system
+  when the field resets (for example, you tap to move the cursor). The `Final`
+  for the same phrase would then type it a second time. With CLEAR the preview
+  just vanishes, and the finished phrase is typed when it arrives. Before each
+  commit, the preedit is cleared.
+- **Fallback.** The preedit is used only when the input method has focus,
+  `can-show-preedit` is true, and the input source isn't an IBus engine.
+  Otherwise the partial goes to the keyboard's suggestion bar, trimmed to the
+  last 60 characters.
+- **Level meter.** `Level` (20 a second) is smoothed: it jumps up with the voice
+  and decays by ×0.7 per update. While listening, the key's background moves
+  from rgb(165, 29, 45) to rgb(255, 80, 80), and the icon scales up to 1.35×.
+  This is an inline style, cleared when listening ends.
+- **Window switches.** The focused window is recorded at Start. If
+  `notify::focus-window` reports a different window during a session, the
+  extension clears the live text, sends `Cancel`, ignores any `Final` still in
+  flight, and shows a notification. Phrases already typed stay; only the
+  unfinished one is lost. Moving to another field in the same window is
+  allowed: text goes where the cursor now is.
+- **Small polish.**
+  - The key's accessible name is "Dictate".
+  - A missing service gives a "run install.sh" message instead of the raw D-Bus
+    error.
+  - `install.sh` says when an updated extension needs a re-login.
+
+Test additions: `tests/shell/run.sh` now also checks the preedit updates the
+GTK view saw (via `preedit-changed`), how many key colours appeared while
+listening, and the window-switch case. That case uses a second window in a
+separate process: two windows from one process raced for focus at startup,
+and the "focused" window and the one receiving text briefly disagreed. In the
+passing run:
+
+- 25 preedit updates reached the app;
+- the key showed 84 colours;
+- the switch was cancelled within 1.3 s, with nothing typed in the other window.

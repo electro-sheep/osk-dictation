@@ -49,7 +49,13 @@ export default class TestDriver extends Extension {
     }
 
     _write(result) {
-        const data = JSON.stringify({...result, log: this._log, states: this._states}, null, 1);
+        const data = JSON.stringify({
+            ...result,
+            log: this._log,
+            states: this._states,
+            levelColours: this._levelStyles?.size ?? 0,
+            sawPreedit: this._sawPreedit ?? false,
+        }, null, 1);
         GLib.file_set_contents(`${OUT}/result.json`, data);
     }
 
@@ -79,19 +85,34 @@ export default class TestDriver extends Extension {
         const dictation = Main.extensionManager.lookup('osk-dictation@electro').stateObj;
         this._note('osk-dictation enabled');
 
-        // Record every state the extension goes through.
+        // Record every state the extension goes through, the colours the
+        // listening key takes (the level meter), and whether preedit was shown.
         this._states = [];
+        this._levelStyles = new Set();
         this._pollId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 20, () => {
             if (this._states.at(-1) !== dictation._state)
                 this._states.push(dictation._state);
+            if (this._key && dictation._state === 'listening')
+                this._levelStyles.add(this._key.keyButton.get_style());
+            if (dictation._preedit)
+                this._sawPreedit = true;
             return GLib.SOURCE_CONTINUE;
         });
 
         const findWindow = () => global.display.list_all_windows().find(w => w.title === 'dictation target');
         await until(findWindow, 30000, 'the target window');
         Main.overview.hide();
-        Main.activateWindow(findWindow());
-        this._note('target window focused');
+        // Right after startup the shell may hand focus to the other window
+        // instead, so keep asking until the target really has it.
+        await until(() => {
+            if (global.display.focus_window === findWindow())
+                return true;
+            Main.activateWindow(findWindow());
+            return false;
+        }, 10000, 'focus on the target window');
+        this._note(`target window activated: focus ${global.display.focus_window?.title}`);
+        global.display.connect('notify::focus-window',
+            () => this._note(`focus-window changed to ${global.display.focus_window?.title}`));
 
         try {
             await until(() => Main.keyboard.visible, 8000, 'the keyboard to open');
@@ -113,7 +134,7 @@ export default class TestDriver extends Extension {
         walk(keyboard);
         this._note(`visible key icons: ${icons.join(', ')}; purpose ${keyboard._purpose}`);
         await until(() => [...dictation._micKeys].some(k => k.mapped), 5000, 'a visible mic key');
-        const key = [...dictation._micKeys].find(k => k.mapped);
+        const key = this._key = [...dictation._micKeys].find(k => k.mapped);
         this._note(`mic keys: ${dictation._micKeys.size}, width ${key.width.toFixed(0)} px`);
         await this._screenshot('keyboard.png');
 
@@ -124,12 +145,30 @@ export default class TestDriver extends Extension {
         await sleep(400);
         await this._screenshot('listening.png');
 
-        await sleep(SPEAK_MS);
+        await sleep(5000);
+        this._note(`live text now: ${JSON.stringify(dictation._preedit)}`);
+        await this._screenshot('live.png');
+        await sleep(Math.max(0, SPEAK_MS - 5000));
         await this._click(key.keyButton);
         this._note('clicked mic again');
         await until(() => dictation._state === 'idle', 30000, 'idle');
-        this._note(`idle; key classes: ${key.keyButton.get_style_class_name()}`);
+        this._note(`idle; key classes: ${key.keyButton.get_style_class_name()}; style ${key.keyButton.get_style()}`);
         await sleep(1000);
         await this._screenshot('done.png');
+
+        // Switching windows mid-dictation must drop the session, not type into
+        // the newly focused window.
+        await this._click(key.keyButton);
+        await until(() => dictation._state === 'listening', 15000, 'listening (second session)');
+        await sleep(4000);
+        const other = global.display.list_all_windows().find(w => w.title === 'other window');
+        this._note(`before switch: focus ${global.display.focus_window?.title}, ` +
+            `session window ${dictation._sessionWindow?.title}`);
+        Main.activateWindow(other);
+        await sleep(300);
+        this._note(`switched to the other window mid-dictation: focus now ${global.display.focus_window?.title}`);
+        await until(() => dictation._state === 'idle', 10000, 'idle after the window switch');
+        this._note(`idle after switch; preedit ${JSON.stringify(dictation._preedit)}`);
+        await sleep(3000);  // anything that was going to leak in would have by now
     }
 }

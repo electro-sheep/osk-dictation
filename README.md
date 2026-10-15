@@ -3,11 +3,10 @@
 Offline voice dictation for GNOME's on-screen keyboard. Tap a mic key, talk,
 and the words appear in whatever text field has focus — live, on the device.
 
-**Status: phase 2 of 5.** The dictation service, the terminal test client, and
-the GNOME Shell 46 extension that adds the mic key all work. Live
-(underlined) text while you speak, the level meter, undo and retry from the key
-come in phases 3 and 4. See [DESIGN.md](DESIGN.md) for the plan and the
-measurements behind it.
+**Status: phase 3 of 5.** The dictation service, the terminal test client, and
+the GNOME Shell 46 extension with the mic key, live underlined text and a level
+meter all work. Undo and retry from the key come in phase 4. See
+[DESIGN.md](DESIGN.md) for the plan and the measurements behind it.
 
 ## How it works
 
@@ -17,8 +16,15 @@ front ends to it.
 
 - **The mic key** sits left of the space bar (which gives up the room) on every
   keyboard layout that has one, and is left out of password fields. Tap to
-  start: it turns red once the mic is open. Tap again to stop; the key goes
-  amber while the last phrase finishes. It also stops if the keyboard hides.
+  start: it turns red once the mic is open, and brightens (its icon growing)
+  with your voice. Tap again to stop; the key goes amber while the last phrase
+  finishes. It also stops if the keyboard hides.
+- **Live text:** the phrase you're speaking appears underlined in the app and
+  turns into normal text at each pause. Apps that can't show that (X11 apps, or
+  when an IBus input method such as Chinese input is active) show it in the
+  keyboard's suggestion bar instead.
+- **Switching windows** mid-sentence stops dictation and drops the unfinished
+  phrase, so it never lands in the window you switched to.
 
 - **Engine:** [Moonshine](https://github.com/moonshine-ai/moonshine) small
   streaming, which transcribes while you talk, so text arrives about a second
@@ -118,5 +124,13 @@ tests/shell/run.sh [clip.wav] [output-dir]
 It starts a headless GNOME Shell on a private D-Bus, with its own settings and
 extension folders, so your session is untouched. A test-driver extension
 clicks the mic key with a virtual pointer while the service plays the clip,
-and a GTK text box receives the words. The output folder gets `result.json`,
-the typed text, logs, and screenshots of the keyboard. It takes about a minute.
+and a GTK text box receives the words. It checks:
+
+- the typed text;
+- that live underlined text reached the app (`preedit.log`);
+- that the key's colour followed the voice level;
+- that switching to a second window mid-sentence cancels without typing
+  anything there.
+
+The output folder gets `result.json`, the typed text, logs, and screenshots.
+It takes about 90 seconds.

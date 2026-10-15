@@ -79,7 +79,11 @@ RELOGIN=0
 if [ $WITH_EXTENSION -eq 1 ]; then
 	echo "Installing the keyboard extension..."
 	mkdir -p "$EXT_DIR"
-	cp "$HERE"/extension/{metadata.json,extension.js,stylesheet.css} "$EXT_DIR/"
+	for f in metadata.json extension.js stylesheet.css; do
+		# GNOME Shell keeps an extension's code loaded until logout, so note any change.
+		cmp -s "$HERE/extension/$f" "$EXT_DIR/$f" || RELOGIN=1
+		cp "$HERE/extension/$f" "$EXT_DIR/"
+	done
 	# GNOME Shell on Wayland only discovers new extensions at login, so if it
 	# doesn't know this one yet, add it to the enabled list for next time.
 	if ! gnome-extensions enable "$EXT_UUID" 2>/dev/null; then
@@ -99,6 +103,6 @@ fi
 echo
 echo "Installed. Try the service: osk-dictation-cli"
 if [ $RELOGIN -eq 1 ]; then
-	echo "Log out and back in to load the mic key on the on-screen keyboard."
+	echo "Log out and back in to load the new mic key extension."
 fi
 echo "Logs: journalctl --user -u osk-dictation -f"

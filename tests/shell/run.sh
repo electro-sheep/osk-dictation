@@ -15,7 +15,7 @@ WAV="${1:-$("$PY" -c 'import moonshine_voice, pathlib; print(pathlib.Path(moonsh
 OUT="${2:-$(mktemp -d -t osk-shell-test.XXXXXX)}"
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
-rm -f "$OUT"/result.json "$OUT"/typed.txt "$OUT"/*.png
+rm -f "$OUT"/result.json "$OUT"/typed.txt "$OUT"/other.txt "$OUT"/preedit.log "$OUT"/*.png
 
 if [ "${OSK_TEST_INSIDE:-}" != 1 ]; then
 	# Separate settings and extension folders for everything in the test session.
@@ -43,12 +43,17 @@ OSK_TEST_OUT="$OUT" gnome-shell --mode=user --headless --wayland --no-x11 --virt
 	--wayland-display "$DISPLAY_NAME" >"$OUT/shell.log" 2>&1 &
 for _ in $(seq 100); do [ -S "$XDG_RUNTIME_DIR/$DISPLAY_NAME" ] && break; sleep 0.1; done
 
-WAYLAND_DISPLAY="$DISPLAY_NAME" GDK_BACKEND=wayland python3 "$HERE/target_app.py" "$OUT/typed.txt" >"$OUT/app.log" 2>&1 &
+export WAYLAND_DISPLAY="$DISPLAY_NAME" GDK_BACKEND=wayland
+python3 "$HERE/target_app.py" "$OUT" other >"$OUT/other-app.log" 2>&1 &
+sleep 3
+python3 "$HERE/target_app.py" "$OUT" target >"$OUT/app.log" 2>&1 &
 
-for _ in $(seq 900); do [ -f "$OUT/result.json" ] && break; sleep 0.1; done
-[ -f "$OUT/result.json" ] || echo '{"ok": false, "error": "no result after 90 s"}' >"$OUT/result.json"
+for _ in $(seq 1500); do [ -f "$OUT/result.json" ] && break; sleep 0.1; done
+[ -f "$OUT/result.json" ] || echo '{"ok": false, "error": "no result after 150 s"}' >"$OUT/result.json"
 
 echo "Output: $OUT"
 cat "$OUT/result.json"
 echo
 echo "Typed into the text box: $(cat "$OUT/typed.txt" 2>/dev/null)"
+echo "Live (preedit) updates the app saw: $(grep -c . "$OUT/preedit.log" 2>/dev/null || echo 0)"
+echo "Typed into the other window: '$(cat "$OUT/other.txt" 2>/dev/null)'"
