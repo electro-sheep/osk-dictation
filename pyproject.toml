@@ -1,0 +1,30 @@
+[project]
+name = "osk-dictation"
+version = "0.1.0"
+description = "Offline voice dictation for GNOME's on-screen keyboard"
+requires-python = ">=3.10"
+dependencies = [
+    "moonshine-voice==0.1.5",
+    "numpy",
+]
+
+[project.optional-dependencies]
+whisper = ["faster-whisper==1.2.1"]
+test = ["pytest"]
+
+[project.scripts]
+osk-dictation = "osk_dictation.service:main"
+osk-dictation-cli = "osk_dictation.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["osk_dictation"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools.package-data]
+osk_dictation = ["defaults/*.txt"]

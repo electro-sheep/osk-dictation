@@ -1,0 +1,14 @@
+/* Mic key while listening: red, so it reads as "talk now". */
+.keyboard-key.osk-dictation-listening,
+.keyboard-key.osk-dictation-listening:hover,
+.keyboard-key.osk-dictation-listening:active,
+.keyboard-key.osk-dictation-listening:checked {
+  background-color: #e01b24;
+  color: #ffffff;
+}
+
+/* Opening the mic, or finishing the last phrase: amber icon. */
+.keyboard-key.osk-dictation-busy,
+.keyboard-key.osk-dictation-busy:hover {
+  color: #f6d32d;
+}

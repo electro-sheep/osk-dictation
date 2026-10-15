@@ -1,0 +1,9 @@
+# Fix-ups: when the engine writes the words on the left, put the words on the
+# right instead. Separate several ways it mishears the same thing with |.
+# Matching ignores case and treats spaces and hyphens alike, and only whole
+# words are replaced. This list always wins, so it's the place for names the
+# engine never gets right.
+#
+# Examples:
+# cat pachin | cat per cheen = Catppuccin
+# free cad = FreeCAD

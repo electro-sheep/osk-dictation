@@ -1,0 +1,6 @@
+{
+  "uuid": "osk-test-driver@electro",
+  "name": "OSK Dictation test driver",
+  "description": "Test only: taps the dictation key in a headless shell and records what happens.",
+  "shell-version": ["46"]
+}

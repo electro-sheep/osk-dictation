@@ -1,0 +1,11 @@
+[Unit]
+Description=Offline voice dictation for the on-screen keyboard
+Documentation=file://@PREFIX@/README.md
+
+[Service]
+Type=dbus
+BusName=io.github.electro_sheep.OskDictation
+ExecStart=@VENV@/bin/osk-dictation
+# It exits by itself after a while unused (freeing the model's memory);
+# D-Bus starts it again on the next request, so only restart after crashes.
+Restart=on-failure

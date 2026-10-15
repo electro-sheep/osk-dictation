@@ -1,0 +1,9 @@
+# Bias list: names and jargon you dictate often, one per line, spelled and
+# capitalised the way you want them to come out. The speech engine is nudged
+# towards these. It helps when what you said sounds close, but it isn't
+# guaranteed; for words it keeps getting wrong, add a line to fixes.txt.
+#
+# Examples:
+# GNOME Shell
+# FreeCAD
+# GitHub

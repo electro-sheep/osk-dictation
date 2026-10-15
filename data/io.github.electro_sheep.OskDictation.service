@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=io.github.electro_sheep.OskDictation
+Exec=@VENV@/bin/osk-dictation
+SystemdService=osk-dictation.service
