@@ -13,8 +13,18 @@
 #   --no-extension  install only the service
 set -euo pipefail
 
-HERE="$(cd "$(dirname "$0")" && pwd)"
+HERE="$(cd "$(dirname "$0")" 2>/dev/null && pwd || true)"
 DATA="${XDG_DATA_HOME:-$HOME/.local/share}/osk-dictation"
+
+# Run via `curl ... | bash`: fetch the source into $DATA/src and run from there.
+if [ -z "$HERE" ] || [ ! -f "$HERE/pyproject.toml" ]; then
+	command -v curl >/dev/null || { echo "Missing curl" >&2; exit 1; }
+	echo "Downloading osk-dictation..."
+	mkdir -p "$DATA/src"
+	curl -fsSL https://github.com/electro-sheep/osk-dictation/archive/refs/heads/main.tar.gz |
+		tar -xz -C "$DATA/src" --strip-components=1
+	exec bash "$DATA/src/install.sh" "$@"
+fi
 VENV="$DATA/venv"
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 DBUS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/dbus-1/services"

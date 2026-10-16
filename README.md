@@ -1,11 +1,31 @@
 # osk-dictation
 
-Offline voice dictation for GNOME's on-screen keyboard. Tap a mic key, talk,
-and the words appear in whatever text field has focus — live, on the device.
+A better on-screen keyboard for Linux, with voice-to-text built in.
 
-**Status:** working. The dictation service, a terminal test client, and the OSK Plus
-keyboard (swipe typing, suggestions, dictation) are installed by default. See
-[DESIGN.md](DESIGN.md) for the plan and the measurements behind it.
+I run Linux on a Surface, and typing on glass is slow. So this gives GNOME a
+better on-screen keyboard (**OSK Plus**: swipe typing, word suggestions, copy
+and paste, a space-bar cursor, themes that follow your desktop) with a mic key:
+tap it, talk, and your words appear in whatever text field has focus. It all
+runs offline, on the device.
+
+See [DESIGN.md](DESIGN.md) for the original plan and the speech measurements, and
+[variants/osk-plus](variants/osk-plus/README.md) for what the keyboard does.
+
+## Install and use
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/electro-sheep/osk-dictation/main/install.sh | bash
+```
+
+Then log out and back in once (GNOME on Wayland only loads new extensions at
+login) and open the on-screen keyboard. OSK Plus is installed by default; its
+settings (the gear) have a **Keyboard style** switch to the classic keyboard
+(just a mic key), and `variants/osk-plus/switch.sh plus` switches back. Tap the
+mic in the top bar to dictate, and again to stop.
+
+No sudo needed. It wants PipeWire (`pw-record`) and `python3-gi`. To remove
+everything: `~/.local/share/osk-dictation/src/uninstall.sh` (add `--purge` to
+also delete models and settings).
 
 ## How it works
 
@@ -35,7 +55,14 @@ front ends to it.
 - It stops by itself after 8 s without speech, and the service exits after
   10 minutes unused to free the model's memory (~520 MB).
 
-## Try it without installing
+## Developing
+
+```bash
+git clone https://github.com/electro-sheep/osk-dictation && cd osk-dictation
+./install.sh            # --no-whisper skips the fallback; --no-extension installs only the service
+```
+
+Or try it without installing:
 
 ```bash
 python3 -m venv --system-site-packages .venv   # or: uv venv --system-site-packages .venv
@@ -43,31 +70,10 @@ python3 -m venv --system-site-packages .venv   # or: uv venv --system-site-packa
 .venv/bin/osk-dictation-cli
 ```
 
-The client starts a service for the session if none is running. Keys:
-**Space** start/stop, **r** retry the last phrase with Whisper, **e** switch
-engine, **x** cancel, **c** clear, **q** quit.
-
-Models download on first use into `~/.local/share/osk-dictation/models`.
-
-## Install
-
-```bash
-wget -qO- https://raw.githubusercontent.com/electro-sheep/osk-dictation/main/bootstrap.sh | bash
-```
-
-(While the repository is private, use `gh repo clone electro-sheep/osk-dictation` and
-run `./install.sh` in it instead; add `--no-whisper` to skip the fallback engine, or
-`--no-extension` for the service only.)
-
-No sudo needed; it needs `pw-record` (PipeWire) and `python3-gi`. It installs the
-service (started by D-Bus on first use), the `osk-dictation-cli` test client, and
-both keyboards. **OSK Plus** (see [variants/osk-plus](variants/osk-plus/README.md))
-is the default; the classic keyboard with just the mic key can be chosen under
-Keyboard style in OSK Plus's settings (gear). GNOME Shell on Wayland only picks up
-a new extension at login, so **log out and back in** after the first install.
-To return to OSK Plus from the classic keyboard: `variants/osk-plus/switch.sh plus`.
-Logs: `journalctl --user -u osk-dictation -f`. `./uninstall.sh` removes it all
-(add `--purge` to also delete models and settings).
+The client starts a service if none is running. Keys: **Space** start/stop,
+**r** retry the last phrase with Whisper, **e** switch engine, **x** cancel,
+**c** clear, **q** quit. Models download on first use into
+`~/.local/share/osk-dictation/models`. Logs: `journalctl --user -u osk-dictation -f`.
 
 ## Word lists
 
