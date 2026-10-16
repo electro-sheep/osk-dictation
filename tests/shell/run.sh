@@ -6,6 +6,9 @@
 #
 #   tests/shell/run.sh [WAV] [OUTPUT_DIR]
 #
+# OSK_VARIANT=plus tests the OSK Plus variant instead of OSK Dictation, and
+# OSK_TEST_MONITOR=800x1280 runs in portrait (default 1280x800).
+#
 # Results land in OUTPUT_DIR: result.json, typed.txt, screenshots, logs.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -15,14 +18,20 @@ WAV="${1:-$("$PY" -c 'import moonshine_voice, pathlib; print(pathlib.Path(moonsh
 OUT="${2:-$(mktemp -d -t osk-shell-test.XXXXXX)}"
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
-rm -f "$OUT"/result.json "$OUT"/typed.txt "$OUT"/other.txt "$OUT"/preedit.log "$OUT"/*.png
+rm -f "$OUT"/result.json "$OUT"/cursor.txt "$OUT"/typed.txt "$OUT"/other.txt "$OUT"/preedit.log "$OUT"/*.png
 
 if [ "${OSK_TEST_INSIDE:-}" != 1 ]; then
 	# Separate settings and extension folders for everything in the test session.
 	REAL_DATA="${XDG_DATA_HOME:-$HOME/.local/share}/osk-dictation"
 	mkdir -p "$OUT/config" "$OUT/data/gnome-shell/extensions"
-	ln -sfn "$ROOT/extension" "$OUT/data/gnome-shell/extensions/osk-dictation@electro"
-	ln -sfn "$HERE/osk-test-driver@electro" "$OUT/data/gnome-shell/extensions/osk-test-driver@electro"
+	rm -f "$OUT"/data/gnome-shell/extensions/*
+	if [ "${OSK_VARIANT:-}" = plus ]; then
+		ln -sfn "$ROOT/variants/osk-plus" "$OUT/data/gnome-shell/extensions/osk-plus@electro"
+		ln -sfn "$HERE/osk-plus-driver@electro" "$OUT/data/gnome-shell/extensions/osk-plus-driver@electro"
+	else
+		ln -sfn "$ROOT/extension" "$OUT/data/gnome-shell/extensions/osk-dictation@electro"
+		ln -sfn "$HERE/osk-test-driver@electro" "$OUT/data/gnome-shell/extensions/osk-test-driver@electro"
+	fi
 	export XDG_CONFIG_HOME="$OUT/config" XDG_DATA_HOME="$OUT/data" OSK_DICTATION_DATA_DIR="$REAL_DATA"
 	unset WAYLAND_DISPLAY DISPLAY
 	OSK_TEST_INSIDE=1 exec dbus-run-session -- "$0" "$WAV" "$OUT"
@@ -31,7 +40,11 @@ fi
 cleanup() { kill $(jobs -p) 2>/dev/null; wait 2>/dev/null; }
 trap cleanup EXIT
 
-gsettings set org.gnome.shell enabled-extensions "['osk-dictation@electro', 'osk-test-driver@electro']"
+if [ "${OSK_VARIANT:-}" = plus ]; then
+	gsettings set org.gnome.shell enabled-extensions "['osk-plus@electro', 'osk-plus-driver@electro']"
+else
+	gsettings set org.gnome.shell enabled-extensions "['osk-dictation@electro', 'osk-test-driver@electro']"
+fi
 gsettings set org.gnome.shell welcome-dialog-last-shown-version '999'
 gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true
 
@@ -39,7 +52,7 @@ HF_HUB_OFFLINE=1 "$PY" -m osk_dictation --audio-file "$WAV" --idle-exit 0 --auto
 until grep -q ready "$OUT/service.log" 2>/dev/null; do sleep 0.2; done
 
 DISPLAY_NAME="osk-test-$$"
-OSK_TEST_OUT="$OUT" gnome-shell --mode=user --headless --wayland --no-x11 --virtual-monitor 1280x800 \
+OSK_TEST_OUT="$OUT" gnome-shell --mode=user --headless --wayland --no-x11 --virtual-monitor "${OSK_TEST_MONITOR:-1280x800}" \
 	--wayland-display "$DISPLAY_NAME" >"$OUT/shell.log" 2>&1 &
 for _ in $(seq 100); do [ -S "$XDG_RUNTIME_DIR/$DISPLAY_NAME" ] && break; sleep 0.1; done
 

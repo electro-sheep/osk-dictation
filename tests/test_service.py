@@ -180,3 +180,26 @@ def test_context_continues_sentence(service):
     run.wait_idle_after("finishing", 30)
     first = run.finals()[0][0]
     assert first.startswith(" ") and first[1].islower(), first
+
+
+def test_glide_over_dbus(service):
+    import numpy as np
+    from test_glide import qwerty, swipe
+
+    run = service()
+    keys = {c: (float(x), float(y)) for c, (x, y) in qwerty().items()}
+    run.call("GlideLayout", keys, 30.0, signature="(a{s(dd)}d)")
+    points = [tuple(map(float, p)) for p in swipe("hello", qwerty(), np.random.default_rng(4))]
+    words = run.bus.call_sync(run.name, OBJECT_PATH, INTERFACE, "Glide",
+                              GLib.Variant("(a(dd)ss)", (points, "I said", "normal")), None,
+                              Gio.DBusCallFlags.NONE, 30000, None).unpack()[0]
+    assert words[0] == " hello", words
+
+
+def test_suggest_over_dbus(service):
+    run = service()
+    call = lambda before, purpose="normal": run.bus.call_sync(
+        run.name, OBJECT_PATH, INTERFACE, "Suggest", GLib.Variant("(ss)", (before, purpose)), None,
+        Gio.DBusCallFlags.NONE, 30000, None).unpack()[0]
+    assert "keyboard" in [w.lower() for w in call("my keyb")]
+    assert "install" in call("sudo apt ", "terminal")

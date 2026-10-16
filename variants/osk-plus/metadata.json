@@ -1,0 +1,8 @@
+{
+  "uuid": "osk-plus@electro",
+  "name": "OSK Plus",
+  "description": "A reworked on-screen keyboard: swipe typing, a top bar with copy, paste, dictation and settings, slide-on-space cursor control, themes that match your desktop, and layouts for portrait and landscape. Needs the osk-dictation service. Replaces OSK Dictation while enabled.",
+  "shell-version": ["46"],
+  "url": "https://github.com/electro-sheep/osk-dictation",
+  "version-name": "0.4.0"
+}
