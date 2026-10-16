@@ -162,6 +162,24 @@ export default class Driver extends Extension {
         await this._shot('suggestions.png');
         this._note(`swipe ${JSON.stringify(this._checks.swipe)}`);
 
+        // Next-word suggestions after a space.
+        await this._click(space.keyButton);
+        await until(() => plus._chips.get_n_children() >= 2, 8000, 'next-word suggestions');
+        this._checks.nextWords = plus._chips.get_children().map(c => c.label ?? c.text);
+        await this._shot('next-word.png');
+
+        // The 123 page is a number pad; ABC returns.
+        const labelled = text => kb._currentPage.get_children().find(k => k.keyButton.label === text && k.mapped);
+        await this._click(labelled('?123').keyButton);
+        await sleep(500);
+        this._checks.numbersPage = kb._currentPage.get_children().map(k => k.keyButton.label).filter(Boolean).join(' ');
+        await this._shot('numbers.png');
+        await this._click(labelled('#+=').keyButton);
+        await sleep(500);
+        await this._shot('symbols.png');
+        await this._click(labelled('ABC').keyButton);
+        await sleep(400);
+
         // Settings: open, switch to the Latte theme, screenshot, back to Desktop.
         const settingsButton = plus._bar.get_children().at(-1);
         await this._click(settingsButton);

@@ -33,7 +33,8 @@ const DictationProxy = Gio.DBusProxy.makeProxyWrapper(`
     <method name="Stop"/>
     <method name="Cancel"/>
     <method name="GlideLayout"><arg name="keys" type="a{s(dd)}" direction="in"/><arg name="radius" type="d" direction="in"/></method>
-    <method name="Glide"><arg name="points" type="a(dd)" direction="in"/><arg name="before" type="s" direction="in"/><arg name="words" type="as" direction="out"/></method>
+    <method name="Glide"><arg name="points" type="a(dd)" direction="in"/><arg name="before" type="s" direction="in"/><arg name="purpose" type="s" direction="in"/><arg name="words" type="as" direction="out"/></method>
+    <method name="Suggest"><arg name="before" type="s" direction="in"/><arg name="purpose" type="s" direction="in"/><arg name="words" type="as" direction="out"/></method>
     <signal name="State"><arg name="state" type="s"/></signal>
     <signal name="Partial"><arg name="text" type="s"/></signal>
     <signal name="Final"><arg name="text" type="s"/><arg name="replace" type="b"/></signal>
@@ -51,13 +52,39 @@ const SETTINGS_FILE = GLib.build_filenamev([GLib.get_user_config_dir(), 'osk-dic
 const DEFAULT_SETTINGS = {theme: 'desktop', accent: 'desktop', landscape: 'split'};
 
 const BAR_HEIGHT = 46;          // matches .osk-plus-bar plus padding
-const PORTRAIT_SHARE = 0.36;    // keyboard height as a share of the screen
+const PORTRAIT_SHARE = 0.29;    // keyboard height as a share of the screen
 const LANDSCAPE_SHARE = 0.47;
 const SPLIT_GAP = 2.5;          // key widths between the halves in landscape
 const GLIDE_START = 0.6;        // finger travel (key widths) that turns a press into a swipe
 const CURSOR_START = 12;        // px along the space bar before the cursor moves
 const CURSOR_STEP = 16;         // px per cursor step
 const TRAIL_POINTS = 60;
+const PREVIEW_EVERY = 180000;   // µs between live swipe guesses
+
+// Pages replacing GNOME's two symbol levels: a calculator-style number pad
+// behind ?123, and all the symbols behind #+=.
+const k = (s, width = 1) => ({strings: [s], width});
+const chars = (text, width = 1) => [...text].map(c => k(c, width));
+const DEL = width => ({action: 'delete', iconName: 'edit-clear-symbolic', width});
+const ENTER = width => ({keyval: '0xff0d', iconName: 'keyboard-enter-symbolic', width});
+const TO = (level, label, width) => ({action: 'levelSwitch', level, label, width});
+const HIDE = width => ({action: 'hide', iconName: 'keyboard-hide-symbolic', width});
+const SPACE = width => ({strings: [' '], width});
+const NUMBERS = [
+    [...chars('()%+'), ...chars('123'), DEL(1.5)],
+    [...chars('$:=-'), ...chars('456'), ENTER(1.5)],
+    [TO('opt+shift', '#+=', 2), ...chars('*/'), ...chars('789'), k(',', 1.5)],
+    [TO('default', 'ABC', 2), ...chars('@#'), ...chars('.0'), SPACE(1), HIDE(1.5)],
+];
+const SYMBOLS = [
+    [...chars('!@#$%^&*()'), DEL(1.5)],
+    [...chars('-_=+[]{}<>'), ENTER(1.5)],
+    [TO('opt', '123', 1.5), ...chars('\'":;/\\?|~`')],
+    [TO('default', 'ABC', 1.5), {action: 'emoji', iconName: 'face-smile-symbolic', width: 1.5},
+        ...chars('£€'), SPACE(4), ...chars(',.'), HIDE(1.5)],
+];
+const TERMINAL_KEYS = [['Esc', Clutter.KEY_Escape], ['Tab', Clutter.KEY_Tab], ['Ctrl+C', Clutter.KEY_c, true],
+    ['↑', Clutter.KEY_Up], ['↓', Clutter.KEY_Down], ['Ctrl+R', Clutter.KEY_r, true]];
 
 const isPress = t => t === Clutter.EventType.BUTTON_PRESS || t === Clutter.EventType.TOUCH_BEGIN;
 const isMove = t => t === Clutter.EventType.MOTION || t === Clutter.EventType.TOUCH_UPDATE;
@@ -132,7 +159,17 @@ export default class OskPlusExtension extends Extension {
             ext._password = HIDDEN_FOR.includes(this._purpose);
             if (ext._micButton)
                 ext._micButton.visible = !ext._password;
-            const row = ext._landscapeSplit() ? ext._splitRow(keys) : keys;
+            const index = layout._nRows - 1;
+            if (index === 0) {
+                const first = keys[0]?.strings?.[0];
+                layout._oskPlusPage = first === '1' ? 'numbers' : first === '~' ? 'symbols' : 'letters';
+                GLib.idle_add(GLib.PRIORITY_DEFAULT, () => ext._refreshIdleChips() ?? GLib.SOURCE_REMOVE);
+            }
+            const page = layout._oskPlusPage;
+            let row = page === 'numbers' ? NUMBERS[index] : page === 'symbols' ? SYMBOLS[index] : keys;
+            row = ext._dropLanguageKey(JSON.parse(JSON.stringify(row ?? keys)));
+            if (page !== 'numbers' && ext._landscapeSplit())
+                row = ext._splitRow(row);
             const shown = row.filter(k => !(k.action === 'emoji' && !emojiVisible));
             const meta = shown.map(k => ({first: k.strings?.[0], action: k.action, keyval: k.keyval, icon: k.iconName}));
             let i = 0;
@@ -159,6 +196,8 @@ export default class OskPlusExtension extends Extension {
     disable() {
         if (this._handoverId)
             GLib.source_remove(this._handoverId);
+        if (this._suggestId)
+            GLib.source_remove(this._suggestId);
         if (SESSION_STATES.includes(this._state))
             this._call('Cancel');
         this._clearLive();
@@ -322,6 +361,19 @@ export default class OskPlusExtension extends Extension {
 
     // In landscape, open a gap down the middle of every row for two-thumb typing.
     // A space bar spanning the middle becomes two half-width space bars.
+    // The language key opened GNOME's menu, which could jam all keyboard input;
+    // layouts are chosen in settings instead, and the space bar takes the room.
+    _dropLanguageKey(row) {
+        const i = row.findIndex(k => k.action === 'languageMenu');
+        if (i < 0)
+            return row;
+        const [removed] = row.splice(i, 1);
+        const space = row.find(k => !k.action && k.strings?.[0] === ' ') ?? row[i - 1];
+        if (space)
+            space.width = (space.width ?? 1) + (removed.width ?? 1);
+        return row;
+    }
+
     _splitRow(keys) {
         const row = keys.map(k => ({...k, strings: k.strings ? [...k.strings] : k.strings}));
         const total = row.reduce((sum, k) => sum + (k.leftOffset ?? 0) + (k.width ?? 1), 0);
@@ -395,22 +447,79 @@ export default class OskPlusExtension extends Extension {
         return bar;
     }
 
-    // Ctrl+C / Ctrl+V to the focused app (with Shift in terminals).
-    _shortcut(keyval) {
+    _purposeName() {
+        return this._keyboard?._purpose === Clutter.InputContentPurpose.TERMINAL ? 'terminal' : 'normal';
+    }
+
+    _tap(keyval, mods = [], times = 1) {
         const controller = this._keyboard?._keyboardController;
         if (!controller)
             return;
-        const terminal = this._keyboard._purpose === Clutter.InputContentPurpose.TERMINAL;
-        const mods = terminal ? [Clutter.KEY_Control_L, Clutter.KEY_Shift_L] : [Clutter.KEY_Control_L];
-        mods.forEach(m => controller.keyvalPress(m));
-        controller.keyvalPress(keyval);
-        controller.keyvalRelease(keyval);
-        mods.reverse().forEach(m => controller.keyvalRelease(m));
+        for (let i = 0; i < times; i++) {
+            mods.forEach(m => controller.keyvalPress(m));
+            controller.keyvalPress(keyval);
+            controller.keyvalRelease(keyval);
+            [...mods].reverse().forEach(m => controller.keyvalRelease(m));
+        }
+    }
+
+    // Ctrl+C / Ctrl+V to the focused app (with Shift in terminals).
+    _shortcut(keyval) {
+        const terminal = this._purposeName() === 'terminal';
+        this._tap(keyval, terminal ? [Clutter.KEY_Control_L, Clutter.KEY_Shift_L] : [Clutter.KEY_Control_L]);
+    }
+
+    // With nothing to suggest, terminals get the keys a touch keyboard lacks.
+    _refreshIdleChips() {
+        if (this._chips && this._chips.get_n_children() === 0 || this._idleChips)
+            this._setChips([]);
+    }
+
+    // ---- word suggestions: complete the current word, then predict the next
+
+    _scheduleSuggest() {
+        if (this._password || SESSION_STATES.includes(this._state) || !this._keyboard)
+            return;
+        if (this._suggestId)
+            GLib.source_remove(this._suggestId);
+        this._suggestId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 150, () => {
+            this._suggestId = 0;
+            this._suggest().catch(e => console.warn(`osk-plus: suggest: ${e.message}`));
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    async _suggest() {
+        if (!Main.inputMethod.currentFocus || this._lastGlide || !this._proxy)
+            return;
+        const before = await this._textBeforeCursor();
+        const [words] = await this._proxy.SuggestAsync(before, this._purposeName());
+        if (this._lastGlide || this._gesture || SESSION_STATES.includes(this._state))
+            return;
+        const typing = /[A-Za-z']$/.test(before);
+        const prefix = typing ? /[A-Za-z][A-Za-z']*$/.exec(before)?.[0] ?? '' : '';
+        const items = words.map((w, i) => ({text: w, primary: i === 0, onClick: () => this._acceptSuggestion(prefix, w)}));
+        if (items.length === 3)  // best guess in the middle, as on phones
+            items.splice(0, 2, items[1], items[0]);
+        this._setChips(items);
+    }
+
+    _acceptSuggestion(prefix, word) {
+        this._tap(Clutter.KEY_BackSpace, [], [...prefix].length);
+        this._commit(`${word} `);
+        this._scheduleSuggest();
     }
 
     _setChips(items) {
         if (!this._chips)
             return;
+        this._idleChips = false;
+        if (!items.length && this._purposeName() === 'terminal' && !this._password) {
+            items = TERMINAL_KEYS.map(([text, keyval, ctrl]) => ({
+                text, onClick: () => this._tap(keyval, ctrl ? [Clutter.KEY_Control_L] : []),
+            }));
+            this._idleChips = true;
+        }
         this._chips.destroy_all_children();
         for (const item of items) {
             if (item.live) {
@@ -476,10 +585,23 @@ export default class OskPlusExtension extends Extension {
             this._layoutButtons.set(id, b);
             layouts.add_child(b);
         }
+        section('Landscape layout', layouts);
+
+        this._sourceButtons = new Map();
+        const sources = row();
+        for (const source of Object.values(getInputSourceManager().inputSources)) {
+            const b = new St.Button({label: source.displayName, can_focus: false, style_class: 'osk-plus-toggle'});
+            b.connect('clicked', () => {
+                source.activate(true);
+                this._refreshSettings();
+            });
+            this._sourceButtons.set(source.id, b);
+            sources.add_child(b);
+        }
         const done = new St.Button({label: 'Done', can_focus: false, style_class: 'osk-plus-toggle osk-plus-selected', x_expand: true, x_align: Clutter.ActorAlign.END});
         done.connect('clicked', () => this._toggleSettings());
-        layouts.add_child(done);
-        section('Landscape layout', layouts);
+        sources.add_child(done);
+        section('Keyboard layout', sources);
         return panel;
     }
 
@@ -517,6 +639,7 @@ export default class OskPlusExtension extends Extension {
         mark(this._themeButtons, this._settings.theme);
         mark(this._accentButtons, this._settings.accent);
         mark(this._layoutButtons, this._settings.landscape);
+        mark(this._sourceButtons, getInputSourceManager().currentSource?.id);
     }
 
     // ------------------------------------------------------------ gestures: space cursor and swipe typing
@@ -535,17 +658,19 @@ export default class OskPlusExtension extends Extension {
     _onKeyEvent(event) {
         const type = event.type();
         const [x, y] = event.get_coords();
+        if (isRelease(type) && !this._gesture)
+            this._scheduleSuggest();
         if (isPress(type)) {
             if (this._gesture)
                 return Clutter.EVENT_PROPAGATE;
             const key = this._keyAt(event);
             const info = key && this._keyInfo.get(key);
-            if (!info || info.kind === 'other')
-                return Clutter.EVENT_PROPAGATE;
-            if (info.kind === 'letter' && this._lastGlide) {
-                this._lastGlide = null;  // a tap starts a new word; swipe alternatives no longer apply
+            if (key && this._lastGlide) {
+                this._lastGlide = null;  // any tap moves on; swipe alternatives no longer apply
                 this._setChips([]);
             }
+            if (!info || info.kind === 'other')
+                return Clutter.EVENT_PROPAGATE;
             this._gesture = {key, info, slot: this._slot(event), x0: x, y0: y, mode: null, points: [[x, y]], step: x};
             return Clutter.EVENT_PROPAGATE;
         }
@@ -585,6 +710,12 @@ export default class OskPlusExtension extends Extension {
             if (g.mode === 'glide') {
                 g.points.push([x, y]);
                 this._addTrailPoint(x, y);
+                const now = GLib.get_monotonic_time();
+                if (!g.previewing && g.points.length > 6 && now - (g.previewAt ?? 0) > PREVIEW_EVERY) {
+                    g.previewing = true;
+                    g.previewAt = now;
+                    this._previewGlide(g).catch(() => {}).finally(() => (g.previewing = false));
+                }
                 return Clutter.EVENT_STOP;
             }
             return Clutter.EVENT_PROPAGATE;
@@ -600,6 +731,7 @@ export default class OskPlusExtension extends Extension {
             }
             if (g.mode === 'cursor')
                 return Clutter.EVENT_STOP;
+            this._scheduleSuggest();
         }
         return Clutter.EVENT_PROPAGATE;
     }
@@ -637,10 +769,18 @@ export default class OskPlusExtension extends Extension {
         await this._call('GlideLayout', keys, radius);
     }
 
+    // While the finger is still moving, show the word the path spells so far.
+    async _previewGlide(g) {
+        await this._sendLayout();
+        const [words] = await this._proxy.GlideAsync(g.points.slice(), '', this._purposeName());
+        if (this._gesture === g && words.length)
+            this._setChips([{live: true, text: words[0].trim()}]);
+    }
+
     async _finishGlide(g) {
         await this._sendLayout();
         const before = await g.context;
-        const [words] = await this._proxy.GlideAsync(g.points, before);
+        const [words] = await this._proxy.GlideAsync(g.points, before, this._purposeName());
         if (!words.length)
             return;
         this._commit(words[0]);
@@ -880,5 +1020,6 @@ export default class OskPlusExtension extends Extension {
         this._clearLive();
         this._lastGlide = null;
         this._commit(text);
+        this._scheduleSuggest();
     }
 }

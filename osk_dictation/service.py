@@ -1,5 +1,6 @@
 """The D-Bus service the keyboard extension talks to."""
 import argparse
+import re
 import logging
 import signal
 import sys
@@ -39,6 +40,12 @@ INTROSPECTION = f"""
     <method name="Glide">
       <arg name="points" type="a(dd)" direction="in"/>
       <arg name="before" type="s" direction="in"/>
+      <arg name="purpose" type="s" direction="in"/>
+      <arg name="words" type="as" direction="out"/>
+    </method>
+    <method name="Suggest">
+      <arg name="before" type="s" direction="in"/>
+      <arg name="purpose" type="s" direction="in"/>
       <arg name="words" type="as" direction="out"/>
     </method>
     <signal name="State"><arg name="state" type="s"/></signal>
@@ -58,11 +65,13 @@ SIGNALS = {"state": ("State", "(s)"), "partial": ("Partial", "(s)"),
 
 
 class GlideTyping:
-    """Swipe typing for the keyboard: a word list plus ideal paths per key layout."""
+    """Swipe typing and word suggestions: a word list, ideal paths per key layout,
+    and a predictor that learns which words you type after which."""
 
     def __init__(self):
         self._lock = threading.Lock()
         self._lexicon = None
+        self._predictor = None
         self._layouts = {}
         self._current = None
 
@@ -71,35 +80,65 @@ class GlideTyping:
         self._current = signature
         threading.Thread(target=self._layout, args=(signature, keys, radius), daemon=True).start()
 
+    def _ensure_lexicon(self):
+        from .glide import load_lexicon
+        from .predict import LINUX_WORDS, Predictor
+
+        if self._lexicon is None:
+            self._lexicon = load_lexicon(load_words(config_dir() / "words.txt") + LINUX_WORDS)
+            self._predictor = Predictor(*self._lexicon)
+            log.info("swipe typing and suggestions: %d words", len(self._lexicon[0]))
+
     def _layout(self, signature, keys=None, radius=None):
-        from .glide import Layout, load_lexicon
+        from .glide import Layout
 
         with self._lock:
             if signature not in self._layouts:
-                if self._lexicon is None:
-                    self._lexicon = load_lexicon(load_words(config_dir() / "words.txt"))
-                    log.info("swipe typing: %d words", len(self._lexicon[0]))
+                self._ensure_lexicon()
                 if keys is None:
                     raise RuntimeError("no keyboard layout sent yet")
                 self._layouts = {k: v for k, v in self._layouts.items() if k == self._current}  # keep two
                 self._layouts[signature] = Layout(keys, radius, *self._lexicon)
             return self._layouts[signature]
 
-    def answer(self, invocation, points, before):
-        def work():
+    def _reply(self, invocation, work):
+        def run():
             try:
-                if self._current is None:
-                    raise RuntimeError("no keyboard layout sent yet")
-                layout = self._layout(self._current)
-                words = layout.candidates(points)
-                keep = set(load_words(config_dir() / "words.txt")) | {w for w in words if w[:1].isupper()}
-                result = [format_phrase(w, before, keep) for w in words]
+                result = work()
                 GLib.idle_add(lambda: invocation.return_value(GLib.Variant("(as)", (result,))) and False)
             except Exception as e:
-                log.exception("glide failed")
+                log.exception("keyboard request failed")
                 GLib.idle_add(lambda: invocation.return_dbus_error(f"{INTERFACE}.Error", str(e)) and False)
 
-        threading.Thread(target=work, daemon=True).start()
+        threading.Thread(target=run, daemon=True).start()
+
+    def answer(self, invocation, points, before, purpose="normal"):
+        def work():
+            if self._current is None:
+                raise RuntimeError("no keyboard layout sent yet")
+            layout = self._layout(self._current)
+            words = re.findall(r"[A-Za-z][A-Za-z']*", before[-200:])
+            prev = words[-1] if words and not (before[-1:].isalpha()) else None
+            # Re-rank the best path matches by what usually follows the previous word.
+            ranked = sorted(layout.candidates(points, count=10, scores=True),
+                            key=lambda ws: ws[1] + self._predictor.context(prev, ws[0], purpose), reverse=True)
+            top = [w for w, _ in ranked[:3]]
+            keep = set(load_words(config_dir() / "words.txt")) | {w for w in top if w[:1].isupper()}
+            return [format_phrase(w, before, keep) for w in top]
+
+        self._reply(invocation, work)
+
+    def suggest(self, invocation, before, purpose):
+        def work():
+            with self._lock:
+                self._ensure_lexicon()
+            return self._predictor.suggest(before, purpose)
+
+        self._reply(invocation, work)
+
+    def save(self):
+        if self._predictor:
+            self._predictor.save()
 
 
 class Service:
@@ -119,6 +158,7 @@ class Service:
     def run(self):
         self.loop.run()
         self.dictation.shutdown()
+        self.glide.save()
         return self.exit_code
 
     def _quit(self):
@@ -160,6 +200,10 @@ class Service:
             elif method == "Glide":
                 self.dictation.last_used = time.monotonic()
                 self.glide.answer(invocation, *params.unpack())
+                return
+            elif method == "Suggest":
+                self.dictation.last_used = time.monotonic()
+                self.glide.suggest(invocation, *params.unpack())
                 return
             invocation.return_value(None)
         except Exception as e:

@@ -115,7 +115,7 @@ export function stylesheet(p) {
 .osk-plus-live { color: ${p.subtle}; font-style: italic; }
 .osk-plus-divider { width: 1px; background-color: ${mix(p.bg, p.text, 0.2)}; margin: 10px 0; }
 
-.osk-plus-settings { padding: 8px 14px; spacing: 10px; color: ${p.text}; }
+.osk-plus-settings { padding: 6px 14px; spacing: 5px; color: ${p.text}; }
 .osk-plus-settings-title { font-weight: bold; color: ${p.subtle}; font-size: 0.9em; }
 .osk-plus-swatches { spacing: 8px; }
 .osk-plus-swatch { border-radius: 999px; padding: 6px 14px; border: 2px solid; font-size: 0.95em; }

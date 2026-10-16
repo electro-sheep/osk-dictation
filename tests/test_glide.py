@@ -60,3 +60,15 @@ def test_fast_enough(layout):
     for _ in range(20):
         layout.candidates(path)
     assert (time.perf_counter() - start) / 20 < 0.05
+
+
+def test_suggestions_learn_and_know_linux(tmp_path, monkeypatch, layout):
+    monkeypatch.setenv("OSK_DICTATION_DATA_DIR", str(tmp_path))
+    from osk_dictation.predict import Predictor
+    p = Predictor(layout.words, layout.freqs)
+    assert p.suggest("Can you check the batt")[0].lower().startswith("batt")
+    assert "install" in p.suggest("sudo apt ", "terminal")
+    for _ in range(3):
+        p.learn("Surface " * 1 + "Go ")
+        p._last_learned = None
+    assert "Go" in p.suggest("my Surface ") or "go" in p.suggest("my Surface ")

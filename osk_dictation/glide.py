@@ -128,7 +128,7 @@ class Layout:
     def nearest_keys(self, point, n=2):
         return np.argsort(np.linalg.norm(self.centres - point, axis=1))[:n]
 
-    def candidates(self, points, count=3):
+    def candidates(self, points, count=3, scores=False):
         points = np.asarray(points, dtype=np.float32)
         if len(points) < 2:
             return []
@@ -145,10 +145,13 @@ class Layout:
         shape = np.linalg.norm(self.shapes[rows] - user_shape, axis=2).mean(axis=1)
         score = (-0.5 * (shape / SHAPE_SIGMA) ** 2 - 0.5 * (location / LOCATION_SIGMA) ** 2
                  + FREQ_WEIGHT * self.freqs[rows])
-        best, out = rows[np.argsort(-score)], []
-        for r in best:
-            if self.words[r] not in out:
-                out.append(self.words[r])
+        order = np.argsort(-score)
+        out, seen = [], set()
+        for i in order:
+            word = self.words[rows[i]]
+            if word not in seen:
+                seen.add(word)
+                out.append((word, float(score[i])))
             if len(out) == count:
                 break
-        return out
+        return out if scores else [w for w, _ in out]
