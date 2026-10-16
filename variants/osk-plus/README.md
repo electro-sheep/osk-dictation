@@ -1,40 +1,68 @@
 # OSK Plus
 
-A reworked GNOME 46 on-screen keyboard, built on the osk-dictation service.
-It takes ideas from Gboard and matches your desktop. While it's enabled it
-replaces OSK Dictation (`extension/`), which stays as it was.
+A Gboard-inspired GNOME 46 on-screen keyboard, built on the osk-dictation
+service. While enabled, it replaces the standard OSK Dictation keyboard.
 
-- **Top bar:** copy, paste, mic (dictation with live underlined text and a level
-  meter) and settings. Copy and paste send Ctrl+C / Ctrl+V, or Ctrl+Shift+C / V
-  in terminals.
-- **Swipe typing:** slide across the letters. A trail follows your finger. The
-  best word is typed and two alternatives appear in the bar; tap one to swap.
-  Spacing and capitals follow the text before the cursor. The service matches
-  your path against about 44,000 British English words plus your `words.txt`
-  (method after FlorisBoard's, Apache-2.0).
-- **Word suggestions:** the bar completes the word you're typing and, after a
-  space, predicts the next one (best guess bold in the middle). It learns what
-  you type after which word, kept only on this machine in
-  `~/.local/share/osk-dictation/history.json`, and knows Linux commands, which
-  get a lift in terminals. Swipe guesses use the same context, and the word the
-  path spells so far shows live while you swipe.
-- **Number pad:** `?123` opens a calculator-style pad; `#+=` has all the
-  symbols; `ABC` returns.
-- **Terminals:** with nothing to suggest, the bar offers Esc, Tab, Ctrl+C, ↑, ↓
-  and Ctrl+R.
-- **Space-bar cursor:** press the space bar and slide left or right to move the
-  cursor one character per step.
-- **Colours:** by default they follow your desktop (the Open Bar panel colours
-  and accent). Settings (gear) offers themes, accents, the landscape layout and the keyboard layout (language).
-  Choices are saved in `~/.config/osk-dictation/keyboard.json`.
-- **Rotation:** in portrait, full-width keys; in landscape, a split layout for
-  two thumbs (or full width, set in settings).
-- **Hidden in password fields:** swipe and the mic are off there.
+## Install
+
+Run this single command in a terminal:
 
 ```bash
-variants/osk-plus/switch.sh plus       # use OSK Plus (log out and in the first time)
-variants/osk-plus/switch.sh original   # back to OSK Dictation
+curl -fsSL https://raw.githubusercontent.com/electro-sheep/osk-dictation/main/install.sh | bash && bash "${XDG_DATA_HOME:-$HOME/.local/share}/osk-dictation/src/variants/osk-plus/switch.sh" plus
 ```
 
-Test without logging out: `OSK_VARIANT=plus tests/shell/run.sh`. Add
-`OSK_TEST_MONITOR=800x1280` for portrait.
+This installs the dictation service and OSK Plus. No `sudo` is needed. It
+requires GNOME Shell 46, PipeWire (`pw-record`), and `python3-gi`. Log out and
+back in once after installation so GNOME loads the new keyboard.
+
+## What you get
+
+- **Top bar:** copy, paste, dictation, settings, and word suggestions.
+- **Swipe typing:** slide across the letters; the best match is typed and
+  alternatives appear in the bar.
+- **Word suggestions:** predictions adapt to what you type and stay on your
+  device.
+- **Number pad:** `?123` opens the number pad, `#+=` shows symbols, and `ABC`
+  returns to letters.
+- **Space-bar cursor:** slide on the space bar to move the cursor.
+- **Themes and layouts:** colours follow your desktop or a theme you choose;
+  portrait and landscape layouts are supported.
+- **Dictation:** the mic provides live text and a voice-level meter. Swipe and
+  dictation are disabled in password fields.
+
+## Switch keyboards
+
+Only one keyboard variant can be enabled at a time. To switch back to the
+standard keyboard:
+
+```bash
+bash "${XDG_DATA_HOME:-$HOME/.local/share}/osk-dictation/src/variants/osk-plus/switch.sh" original
+```
+
+Switching back for the first time may require logging out and in.
+
+## Remove
+
+Switch back to the standard keyboard, then run the service uninstaller:
+
+```bash
+bash "${XDG_DATA_HOME:-$HOME/.local/share}/osk-dictation/src/variants/osk-plus/switch.sh" original
+bash "${XDG_DATA_HOME:-$HOME/.local/share}/osk-dictation/src/uninstall.sh"
+```
+
+The uninstaller keeps downloaded models and settings by default. To remove
+those too, add `--purge`. To remove the now-disabled OSK Plus extension files:
+
+```bash
+rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/osk-plus@electro"
+```
+
+## Test
+
+Run the headless shell test without logging out:
+
+```bash
+OSK_VARIANT=plus tests/shell/run.sh
+```
+
+For a portrait layout, add `OSK_TEST_MONITOR=800x1280`.
