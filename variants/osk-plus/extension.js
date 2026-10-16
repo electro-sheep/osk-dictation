@@ -155,6 +155,14 @@ export default class OskPlusExtension extends Extension {
             original.call(this, ...args);
             ext._resize(this);
         });
+        // GNOME snaps back to the letters page whenever the app's text hints
+        // change (dictated text arriving does that); stay on numbers or symbols.
+        this._injections.overrideMethod(KeyboardUI.Keyboard.prototype, '_updateLevelFromHints', original => function (...args) {
+            const page = this._currentPage?._oskPlusPage;
+            if (page === 'numbers' || page === 'symbols')
+                return;
+            original.call(this, ...args);
+        });
         this._injections.overrideMethod(KeyboardUI.Keyboard.prototype, '_addRowKeys', original => function (keys, layout, emojiVisible) {
             ext._password = HIDDEN_FOR.includes(this._purpose);
             if (ext._micButton)
@@ -279,8 +287,8 @@ export default class OskPlusExtension extends Extension {
         this._keyboard = keyboard;
         keyboard.add_style_class_name('osk-plus');
         keyboard.connectObject('destroy', () => {
-            this._keyboard = null;
-            this._micButton = null;
+            this._keyboard = this._micButton = this._chips = this._bar = null;
+            this._settingsPanel = this._trail = this._gesture = null;
         }, this);
 
         this._bar = this._buildBar();
@@ -505,7 +513,7 @@ export default class OskPlusExtension extends Extension {
     }
 
     _acceptSuggestion(prefix, word) {
-        this._tap(Clutter.KEY_BackSpace, [], [...prefix].length);
+        this._deleteBefore([...prefix].length);
         this._commit(`${word} `);
         this._scheduleSuggest();
     }
@@ -661,8 +669,13 @@ export default class OskPlusExtension extends Extension {
         if (isRelease(type) && !this._gesture)
             this._scheduleSuggest();
         if (isPress(type)) {
-            if (this._gesture)
+            // A second finger is ignored; a new press from the same pointer means the
+            // last release was lost (e.g. outside the keyboard), so start afresh.
+            if (this._gesture && this._gesture.slot !== this._slot(event))
                 return Clutter.EVENT_PROPAGATE;
+            if (this._gesture?.mode === 'glide')
+                this._endTrail();
+            this._gesture = null;
             const key = this._keyAt(event);
             const info = key && this._keyInfo.get(key);
             if (key && this._lastGlide) {
@@ -788,11 +801,7 @@ export default class OskPlusExtension extends Extension {
         const pick = word => {
             if (!this._lastGlide)
                 return;
-            const controller = this._keyboard._keyboardController;
-            for (let i = 0; i < [...this._lastGlide].length; i++) {
-                controller.keyvalPress(Clutter.KEY_BackSpace);
-                controller.keyvalRelease(Clutter.KEY_BackSpace);
-            }
+            this._deleteBefore([...this._lastGlide].length);
             this._commit(word);
             this._lastGlide = word;
             showChips(word);
@@ -821,7 +830,7 @@ export default class OskPlusExtension extends Extension {
 
     _endTrail() {
         this._trailPoints = [];
-        this._trail.queue_repaint();
+        this._trail?.queue_repaint();
     }
 
     _paintTrail(area) {
@@ -852,6 +861,7 @@ export default class OskPlusExtension extends Extension {
                 return GLib.SOURCE_REMOVE;
             });
         } else {
+            this._gesture = null;
             if (['starting', 'listening'].includes(this._state))
                 this._call('Stop');
             if (this._settingsPanel?.visible)
@@ -1004,6 +1014,17 @@ export default class OskPlusExtension extends Extension {
             this._live = '';
             this._setChips([]);
         }
+    }
+
+    // Deletes the characters before the cursor through the same channel _commit
+    // types through, so the deletion can't arrive after the new text and eat it.
+    _deleteBefore(count) {
+        if (!count)
+            return;
+        if (Main.inputMethod.currentFocus)
+            Main.inputMethod.delete_surrounding(-count, count);
+        else
+            this._tap(Clutter.KEY_BackSpace, [], count);
     }
 
     _commit(text) {

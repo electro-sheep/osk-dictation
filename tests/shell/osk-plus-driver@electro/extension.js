@@ -162,6 +162,14 @@ export default class Driver extends Extension {
         await this._shot('suggestions.png');
         this._note(`swipe ${JSON.stringify(this._checks.swipe)}`);
 
+        // Tapping an alternative replaces the swiped word.
+        const alternative = plus._chips.get_children().find(c => !c.has_style_class_name('osk-plus-primary'));
+        await this._click(alternative);
+        await sleep(600);
+        this._checks.pickedAlternative = {chose: alternative.label, typed: read('typed.txt')};
+        if (!read('typed.txt').endsWith(alternative.label) || /hello/.test(read('typed.txt')))
+            throw new Error(`alternative not swapped in: ${read('typed.txt')}`);
+
         // Next-word suggestions after a space.
         await this._click(space.keyButton);
         await until(() => plus._chips.get_n_children() >= 2, 8000, 'next-word suggestions');
