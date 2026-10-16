@@ -27,6 +27,7 @@ if [ "${OSK_TEST_INSIDE:-}" != 1 ]; then
 	rm -f "$OUT"/data/gnome-shell/extensions/*
 	if [ "${OSK_VARIANT:-}" = plus ]; then
 		ln -sfn "$ROOT/variants/osk-plus" "$OUT/data/gnome-shell/extensions/osk-plus@electro"
+		ln -sfn "$ROOT/extension" "$OUT/data/gnome-shell/extensions/osk-dictation@electro"
 		ln -sfn "$HERE/osk-plus-driver@electro" "$OUT/data/gnome-shell/extensions/osk-plus-driver@electro"
 	else
 		ln -sfn "$ROOT/extension" "$OUT/data/gnome-shell/extensions/osk-dictation@electro"

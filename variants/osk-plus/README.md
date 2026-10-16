@@ -31,6 +31,9 @@ replaces OSK Dictation (`extension/`), which stays as it was.
   two thumbs (or full width, set in settings).
 - **Hidden in password fields:** swipe and the mic are off there.
 
+OSK Plus is what `install.sh` installs by default. **Keyboard style** in its settings
+(gear) switches to the classic keyboard (the original, with just the mic key).
+
 ```bash
 variants/osk-plus/switch.sh plus       # use OSK Plus (log out and in the first time)
 variants/osk-plus/switch.sh original   # back to OSK Dictation

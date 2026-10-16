@@ -217,6 +217,15 @@ export default class Driver extends Extension {
         await until(() => plus._state === 'idle', 30000, 'idle after dictation');
         await sleep(800);
         this._checks.dictated = read('typed.txt').slice(typedBefore.length);
+        // Keyboard style: Classic hands over to the original extension.
+        await this._click(plus._bar.get_children().at(-1));
+        await sleep(400);
+        const classicButton = plus._settingsPanel.get_children().find(c => c.get_children?.().some(b => b.label?.startsWith('Classic')))
+            .get_children().find(b => b.label?.startsWith('Classic'));
+        this._checks.classicOffered = classicButton.visible;
+        await this._click(classicButton);
+        await until(() => Main.extensionManager.lookup('osk-dictation@electro')?.state === 1, 10000, 'the classic keyboard');
+        this._checks.switchedToClassic = Main.extensionManager.lookup('osk-plus@electro').state !== 1;
         this._note('done');
     }
 }

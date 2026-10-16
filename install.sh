@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Installs the osk-dictation service for the current user (no sudo needed):
+# Installs the osk-dictation service and keyboard for the current user (no sudo needed):
 #   ~/.local/share/osk-dictation/venv      Python environment with the engines
 #   ~/.local/share/osk-dictation/models    speech models (downloaded on first use)
 #   ~/.config/systemd/user/                systemd unit
 #   ~/.local/share/dbus-1/services/        D-Bus auto-start entry
 #   ~/.local/bin/osk-dictation-cli         terminal test client
-#   ~/.local/share/gnome-shell/extensions/osk-dictation@electro   the mic key
+#   ~/.local/share/gnome-shell/extensions/osk-plus@electro        the keyboard (default)
+#   ~/.local/share/gnome-shell/extensions/osk-dictation@electro   the classic keyboard
+#                                          (switch between them in the keyboard's settings)
 # Options:
 #   --no-whisper    skip the faster-whisper fallback (saves ~300 MB)
 #   --no-extension  install only the service
@@ -16,8 +18,9 @@ DATA="${XDG_DATA_HOME:-$HOME/.local/share}/osk-dictation"
 VENV="$DATA/venv"
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 DBUS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/dbus-1/services"
-EXT_UUID="osk-dictation@electro"
-EXT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/$EXT_UUID"
+EXT_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions"
+PLUS_UUID="osk-plus@electro"
+CLASSIC_UUID="osk-dictation@electro"
 EXTRAS="[whisper]"
 WITH_EXTENSION=1
 for arg in "$@"; do
@@ -77,32 +80,39 @@ EOF
 
 RELOGIN=0
 if [ $WITH_EXTENSION -eq 1 ]; then
-	echo "Installing the keyboard extension..."
-	mkdir -p "$EXT_DIR"
-	for f in metadata.json extension.js stylesheet.css; do
+	echo "Installing the keyboards..."
+	mkdir -p "$EXT_ROOT/$PLUS_UUID" "$EXT_ROOT/$CLASSIC_UUID"
+	for f in metadata.json extension.js themes.js; do
 		# GNOME Shell keeps an extension's code loaded until logout, so note any change.
-		cmp -s "$HERE/extension/$f" "$EXT_DIR/$f" || RELOGIN=1
-		cp "$HERE/extension/$f" "$EXT_DIR/"
+		cmp -s "$HERE/variants/osk-plus/$f" "$EXT_ROOT/$PLUS_UUID/$f" || RELOGIN=1
+		cp "$HERE/variants/osk-plus/$f" "$EXT_ROOT/$PLUS_UUID/"
 	done
-	# GNOME Shell on Wayland only discovers new extensions at login, so if it
-	# doesn't know this one yet, add it to the enabled list for next time.
-	if ! gnome-extensions enable "$EXT_UUID" 2>/dev/null; then
-		python3 - "$EXT_UUID" <<'PY'
+	for f in metadata.json extension.js stylesheet.css; do
+		cmp -s "$HERE/extension/$f" "$EXT_ROOT/$CLASSIC_UUID/$f" || RELOGIN=1
+		cp "$HERE/extension/$f" "$EXT_ROOT/$CLASSIC_UUID/"
+	done
+	# Only one keyboard patch may run at a time. OSK Plus is the default; if the
+	# classic one is already the user's choice, that choice is kept.
+	python3 - "$PLUS_UUID" "$CLASSIC_UUID" <<'EOF'
 import sys
 from gi.repository import Gio
+plus, classic = sys.argv[1:]
 settings = Gio.Settings.new("org.gnome.shell")
 enabled = settings.get_strv("enabled-extensions")
-if sys.argv[1] not in enabled:
-    settings.set_strv("enabled-extensions", enabled + [sys.argv[1]])
+if not (classic in enabled and plus not in enabled):
+    enabled = [e for e in enabled if e != classic]
+    if plus not in enabled:
+        enabled.append(plus)
+    settings.set_strv("enabled-extensions", enabled)
 Gio.Settings.sync()
-PY
-		RELOGIN=1
-	fi
+EOF
+	# GNOME on Wayland only discovers new extensions at login.
+	gnome-extensions list --enabled 2>/dev/null | grep -Eqx "$PLUS_UUID|$CLASSIC_UUID" || RELOGIN=1
 fi
 
 echo
 echo "Installed. Try the service: osk-dictation-cli"
 if [ $RELOGIN -eq 1 ]; then
-	echo "Log out and back in to load the new mic key extension."
+	echo "Log out and back in to load the keyboard."
 fi
 echo "Logs: journalctl --user -u osk-dictation -f"

@@ -606,11 +606,30 @@ export default class OskPlusExtension extends Extension {
             this._sourceButtons.set(source.id, b);
             sources.add_child(b);
         }
+        const styles = row();
+        const plus = new St.Button({label: 'OSK Plus', can_focus: false, style_class: 'osk-plus-toggle osk-plus-selected'});
+        const classic = new St.Button({label: 'Classic (with dictation)', can_focus: false, style_class: 'osk-plus-toggle'});
+        classic.connect('clicked', () => this._switchToClassic());
+        classic.visible = Boolean(Main.extensionManager.lookup(ORIGINAL_UUID));
+        styles.add_child(plus);
+        styles.add_child(classic);
+        section('Keyboard style', styles);
+
         const done = new St.Button({label: 'Done', can_focus: false, style_class: 'osk-plus-toggle osk-plus-selected', x_expand: true, x_align: Clutter.ActorAlign.END});
         done.connect('clicked', () => this._toggleSettings());
         sources.add_child(done);
         section('Keyboard layout', sources);
         return panel;
+    }
+
+    // Hand the keyboard to the classic extension (the one this replaces). Done after
+    // this click finishes, because disabling ourselves tears the keyboard decoration down.
+    _switchToClassic() {
+        GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+            Main.extensionManager.disableExtension(this.uuid);
+            Main.extensionManager.enableExtension(ORIGINAL_UUID);
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     _toggleSettings() {

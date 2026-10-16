@@ -3,9 +3,8 @@
 Offline voice dictation for GNOME's on-screen keyboard. Tap a mic key, talk,
 and the words appear in whatever text field has focus — live, on the device.
 
-**Status: phase 3 of 5.** The dictation service, the terminal test client, and
-the GNOME Shell 46 extension with the mic key, live underlined text and a level
-meter all work. Undo and retry from the key come in phase 4. See
+**Status:** working. The dictation service, a terminal test client, and the OSK Plus
+keyboard (swipe typing, suggestions, dictation) are installed by default. See
 [DESIGN.md](DESIGN.md) for the plan and the measurements behind it.
 
 ## How it works
@@ -53,13 +52,20 @@ Models download on first use into `~/.local/share/osk-dictation/models`.
 ## Install
 
 ```bash
-./install.sh            # --no-whisper skips the fallback; --no-extension installs only the service
+wget -qO- https://raw.githubusercontent.com/electro-sheep/osk-dictation/main/bootstrap.sh | bash
 ```
 
-No sudo needed; it needs `pw-record` (PipeWire) and `python3-gi`. It installs
-the service (started by D-Bus on first use), the `osk-dictation-cli` test
-client, and the keyboard extension. GNOME Shell on Wayland only picks up a new
-extension at login, so **log out and back in** after the first install.
+(While the repository is private, use `gh repo clone electro-sheep/osk-dictation` and
+run `./install.sh` in it instead; add `--no-whisper` to skip the fallback engine, or
+`--no-extension` for the service only.)
+
+No sudo needed; it needs `pw-record` (PipeWire) and `python3-gi`. It installs the
+service (started by D-Bus on first use), the `osk-dictation-cli` test client, and
+both keyboards. **OSK Plus** (see [variants/osk-plus](variants/osk-plus/README.md))
+is the default; the classic keyboard with just the mic key can be chosen under
+Keyboard style in OSK Plus's settings (gear). GNOME Shell on Wayland only picks up
+a new extension at login, so **log out and back in** after the first install.
+To return to OSK Plus from the classic keyboard: `variants/osk-plus/switch.sh plus`.
 Logs: `journalctl --user -u osk-dictation -f`. `./uninstall.sh` removes it all
 (add `--purge` to also delete models and settings).
 

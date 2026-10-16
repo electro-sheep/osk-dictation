@@ -6,19 +6,18 @@ set -euo pipefail
 DATA="${XDG_DATA_HOME:-$HOME/.local/share}/osk-dictation"
 UNIT="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/osk-dictation.service"
 DBUS="${XDG_DATA_HOME:-$HOME/.local/share}/dbus-1/services/io.github.electro_sheep.OskDictation.service"
-EXT_UUID="osk-dictation@electro"
+UUIDS="osk-plus@electro osk-dictation@electro"
 
-gnome-extensions disable "$EXT_UUID" 2>/dev/null || true
-python3 - "$EXT_UUID" <<'PY'
+for u in $UUIDS; do gnome-extensions disable "$u" 2>/dev/null || true; done
+python3 - $UUIDS <<'EOF'
 import sys
 from gi.repository import Gio
 settings = Gio.Settings.new("org.gnome.shell")
 enabled = settings.get_strv("enabled-extensions")
-if sys.argv[1] in enabled:
-    settings.set_strv("enabled-extensions", [e for e in enabled if e != sys.argv[1]])
+settings.set_strv("enabled-extensions", [e for e in enabled if e not in sys.argv[1:]])
 Gio.Settings.sync()
-PY
-rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/$EXT_UUID"
+EOF
+for u in $UUIDS; do rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/$u"; done
 
 systemctl --user stop osk-dictation.service 2>/dev/null || true
 rm -f "$UNIT" "$DBUS"
