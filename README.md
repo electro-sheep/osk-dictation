@@ -1,12 +1,29 @@
 # osk-dictation
 
-Offline voice dictation for GNOME's on-screen keyboard. Tap a mic key, talk,
-and the words appear in whatever text field has focus — live, on the device.
+A better on-screen keyboard for Linux, with voice-to-text built in.
 
-**Status: phase 3 of 5.** The dictation service, the terminal test client, and
-the GNOME Shell 46 extension with the mic key, live underlined text and a level
-meter all work. Undo and retry from the key come in phase 4. See
-[DESIGN.md](DESIGN.md) for the plan and the measurements behind it.
+I run Linux on a Surface, and typing on glass is slow. So this adds a mic key
+to GNOME's on-screen keyboard: tap it, talk, and your words appear in
+whatever text field has focus. It all runs offline, on the device.
+
+> **Work in progress.** The dictation service, the terminal test client and the
+> GNOME Shell 46 extension (mic key, live underlined text, level meter) all
+> work. Undo and retry from the key are next. Expect rough edges. See
+> [DESIGN.md](DESIGN.md) for the plan and the measurements behind it.
+
+## Install and use
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/electro-sheep/osk-dictation/main/install.sh | bash
+```
+
+Then log out and back in once (GNOME on Wayland only loads new extensions at
+login), open the on-screen keyboard, and tap the mic key left of the space bar.
+Tap it again to stop.
+
+No sudo needed. It wants PipeWire (`pw-record`) and `python3-gi`. To remove
+everything: `~/.local/share/osk-dictation/src/uninstall.sh` (add `--purge` to
+also delete models and settings).
 
 ## How it works
 
@@ -36,7 +53,14 @@ front ends to it.
 - It stops by itself after 8 s without speech, and the service exits after
   10 minutes unused to free the model's memory (~520 MB).
 
-## Try it without installing
+## Developing
+
+```bash
+git clone https://github.com/electro-sheep/osk-dictation && cd osk-dictation
+./install.sh            # --no-whisper skips the fallback; --no-extension installs only the service
+```
+
+Or try it without installing:
 
 ```bash
 python3 -m venv --system-site-packages .venv   # or: uv venv --system-site-packages .venv
@@ -44,24 +68,10 @@ python3 -m venv --system-site-packages .venv   # or: uv venv --system-site-packa
 .venv/bin/osk-dictation-cli
 ```
 
-The client starts a service for the session if none is running. Keys:
-**Space** start/stop, **r** retry the last phrase with Whisper, **e** switch
-engine, **x** cancel, **c** clear, **q** quit.
-
-Models download on first use into `~/.local/share/osk-dictation/models`.
-
-## Install
-
-```bash
-./install.sh            # --no-whisper skips the fallback; --no-extension installs only the service
-```
-
-No sudo needed; it needs `pw-record` (PipeWire) and `python3-gi`. It installs
-the service (started by D-Bus on first use), the `osk-dictation-cli` test
-client, and the keyboard extension. GNOME Shell on Wayland only picks up a new
-extension at login, so **log out and back in** after the first install.
-Logs: `journalctl --user -u osk-dictation -f`. `./uninstall.sh` removes it all
-(add `--purge` to also delete models and settings).
+The client starts a service if none is running. Keys: **Space** start/stop,
+**r** retry the last phrase with Whisper, **e** switch engine, **x** cancel,
+**c** clear, **q** quit. Models download on first use into
+`~/.local/share/osk-dictation/models`. Logs: `journalctl --user -u osk-dictation -f`.
 
 ## Word lists
 
