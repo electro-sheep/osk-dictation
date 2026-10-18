@@ -109,7 +109,7 @@ from gi.repository import Gio
 plus, classic = sys.argv[1:]
 settings = Gio.Settings.new("org.gnome.shell")
 enabled = settings.get_strv("enabled-extensions")
-if not (classic in enabled and plus not in enabled):
+if True:  # OSK Plus (Gboard-style) is the keyboard; drop the classic one
     enabled = [e for e in enabled if e != classic]
     if plus not in enabled:
         enabled.append(plus)
