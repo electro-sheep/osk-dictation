@@ -2,7 +2,7 @@
 
 Status: phases 1 to 3 (service, terminal client, keyboard extension with live
 text and level meter) built 2026-10-15; see the "as built" sections at the
-end for where they differ from this plan. Written for the Surface Go 2 (Ubuntu 24.04, GNOME 46, Wayland, Core m3-8100Y, 8 GB).
+end for where they differ from this plan. Written for the Surface Go 2 (Ubuntu 24.04+ (now 26.04), GNOME 46-50, Wayland, Core m3-8100Y, 8 GB).
 
 ## Goal
 

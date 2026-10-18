@@ -2,5 +2,5 @@
   "uuid": "osk-plus-driver@electro",
   "name": "OSK Plus test driver",
   "description": "Test only: exercises OSK Plus in a headless shell and records what happens.",
-  "shell-version": ["46"]
+  "shell-version": ["46", "47", "48", "49", "50"]
 }

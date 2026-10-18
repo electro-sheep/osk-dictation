@@ -2,7 +2,7 @@
   "uuid": "osk-dictation@electro",
   "name": "OSK Dictation",
   "description": "Adds a microphone key to the on-screen keyboard for offline voice dictation. Needs the osk-dictation service.",
-  "shell-version": ["46"],
+  "shell-version": ["46", "47", "48", "49", "50"],
   "url": "https://github.com/electro-sheep/osk-dictation",
   "version-name": "0.1.0"
 }
